@@ -89,6 +89,9 @@ public class DownloadService {
         boolean sync = false;
 
         for (Item item : items) {
+            if (Open115Util.isEnabled(CONFIG) && Thread.currentThread().isInterrupted()) {
+                return;
+            }
             log.debug(JSONUtil.formatJsonStr(GsonStatic.toJson(item)));
             String reName = item.getReName();
             File torrent = TorrentUtil.getTorrent(ani, item);
@@ -99,9 +102,11 @@ public class DownloadService {
             Double episode = item.getEpisode();
             // .5 集
             boolean is5 = ItemsUtil.is5(episode);
+            boolean pendingCloudTask = Open115Util.isEnabled(CONFIG)
+                    && Open115TaskStore.find(CONFIG, ani, item) != null;
 
             // 已经下载过
-            if (torrent.exists()) {
+            if (Open115Util.isEnabled(CONFIG) ? Open115TaskStore.completed(CONFIG, ani, item) : torrent.exists()) {
                 log.debug("种子记录已存在 {}", reName);
                 if (master && !is5) {
                     currentDownloadCount++;
@@ -118,7 +123,7 @@ public class DownloadService {
             }
 
             // 只下载最新集
-            if (downloadNew) {
+            if (downloadNew && !pendingCloudTask) {
                 Item newItem = items.get(items.size() - 1);
 
                 // 日期一致也可下载, 防止字幕组同时发多集
@@ -212,7 +217,7 @@ public class DownloadService {
             }
 
             // 同时下载数量限制
-            if (downloadCount > 0) {
+            if (!Open115Util.isEnabled(CONFIG) && downloadCount > 0) {
                 if (count >= downloadCount) {
                     log.debug("达到同时下载数量限制 {}", downloadCount);
                     continue;
@@ -232,9 +237,11 @@ public class DownloadService {
                 return;
             }
 
-            sync = true;
-
             download(ani, item, savePath, saveTorrent);
+            if (Open115Util.isEnabled(CONFIG) && !Open115TaskStore.completed(CONFIG, ani, item)) {
+                continue;
+            }
+            sync = true;
 
             if (master && !is5) {
                 currentDownloadCount++;
@@ -243,7 +250,9 @@ public class DownloadService {
         }
 
         if (sync) {
-            int size = ItemsUtil.currentEpisodeNumber(ani, items);
+            List<Item> progressItems = Open115Util.isEnabled(CONFIG)
+                    ? items.stream().filter(it -> Open115TaskStore.completed(CONFIG, ani, it)).toList() : items;
+            int size = ItemsUtil.currentEpisodeNumber(ani, progressItems);
             // 更新当前集数
             ani.setCurrentEpisodeNumber(size);
             // 更新下载时间
@@ -273,6 +282,9 @@ public class DownloadService {
      * @param item 资源项
      */
     public void deleteStandbyRss(Ani ani, Item item) {
+        if (Open115Util.isEnabled(CONFIG)) {
+            return; // 云洗版在新资源验证成功后按 fid 清理，禁止本地目录删除。
+        }
         Boolean standbyRss = CONFIG.getStandbyRss();
         Boolean coexist = CONFIG.getCoexist();
         Boolean delete = CONFIG.getDelete();
@@ -384,13 +396,20 @@ public class DownloadService {
             return;
         }
         ThreadUtil.sleep(1000);
-        savePath = FileUtils.getAbsolutePath(savePath);
+        savePath = Open115Util.isEnabled(CONFIG) ? Open115Util.relativePath(savePath, false) : FileUtils.getAbsolutePath(savePath);
 
         String text = StrFormatter.format("{} 已更新", name);
         if (!master) {
             text = StrFormatter.format("(备用RSS) {}", text);
         }
         NotificationUtil.send(CONFIG, ani, text, NotificationStatusEnum.DOWNLOAD_START);
+
+        if (Open115Util.isEnabled(CONFIG)) {
+            if (!TorrentUtil.download(ani, item, savePath, torrentFile) && !Thread.currentThread().isInterrupted()) {
+                NotificationUtil.send(CONFIG, ani, name + " 115 下载未完成，下轮 RSS 将恢复任务", NotificationStatusEnum.ERROR);
+            }
+            return; // 保留种子和云任务关联，不叠乘外层重试，不把超时判为坏种。
+        }
 
         Integer downloadRetry = CONFIG.getDownloadRetry();
         for (int i = 1; i <= downloadRetry; i++) {
@@ -460,7 +479,7 @@ public class DownloadService {
         ani.setSubgroup(subgroup);
 
         Boolean scrape = CONFIG.getScrape();
-        if (scrape) {
+        if (scrape && !Open115Util.isEnabled(CONFIG)) {
             try {
                 // 刮削
                 scrapeService.scrape(ani, false);
@@ -531,7 +550,7 @@ public class DownloadService {
             // 自定义下载位置
             downloadPathTemplate = StrUtil.split(customDownloadPathTemplate, "\n", true, true)
                     .stream()
-                    .map(FileUtils::getAbsolutePath)
+                    .map(path -> Open115Util.isEnabled(config) ? Open115Util.relativePath(path, true) : FileUtils.getAbsolutePath(path))
                     .findFirst()
                     .orElse(downloadPathTemplate);
         }
@@ -623,7 +642,7 @@ public class DownloadService {
             downloadPathTemplate = downloadPathTemplate.replace("${jpTitle}", jpTitle);
         }
 
-        return FileUtils.getAbsolutePath(downloadPathTemplate);
+        return Open115Util.isEnabled(config) ? Open115Util.relativePath(downloadPathTemplate, false) : FileUtils.getAbsolutePath(downloadPathTemplate);
     }
 
 
@@ -636,6 +655,9 @@ public class DownloadService {
      * @return 是否已下载
      */
     public Boolean itemDownloaded(Ani ani, Item item, Boolean downloadList) {
+        if (Open115Util.isEnabled(CONFIG)) {
+            return Open115TaskStore.completed(CONFIG, ani, item);
+        }
         Boolean rename = CONFIG.getRename();
         if (!rename) {
             return false;

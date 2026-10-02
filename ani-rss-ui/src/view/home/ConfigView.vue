@@ -103,6 +103,9 @@ const saveConfig = () => {
       .then(res => {
         ElMessage.success(res.message)
         window.$reLoadList?.()
+        if (my_config.downloadToolType === 'Open115') {
+          loadConfig() // 清空已提交凭据输入，避免下一次保存覆盖后台轮换后的 token。
+        }
       })
       .finally(() => {
         configButtonLoading.value = false

@@ -375,7 +375,8 @@ public class AniService {
         for (Item item : items) {
             item.setHasDownloaded(false);
             File torrent = TorrentUtil.getTorrent(ani, item);
-            if (torrent.exists()) {
+            if (Open115Util.isEnabled(ConfigUtil.CONFIG)
+                    ? Open115TaskStore.completed(ConfigUtil.CONFIG, ani, item) : torrent.exists()) {
                 item.setHasDownloaded(true);
                 continue;
             }

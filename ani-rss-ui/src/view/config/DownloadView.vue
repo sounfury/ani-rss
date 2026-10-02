@@ -10,6 +10,7 @@
           <el-option label="qBittorrent" value="qBittorrent"/>
           <el-option label="Transmission" value="Transmission"/>
           <el-option label="Aria2" value="Aria2"/>
+          <el-option label="115 Open" value="Open115"/>
           <el-option value="OpenList" disabled>
             <div class="full-width">
               <span style="float: left">OpenList</span>
@@ -18,7 +19,7 @@
           </el-option>
         </el-select>
       </SettingsItem>
-      <SettingsItem label="地址">
+      <SettingsItem v-if="props.config.downloadToolType !== 'Open115'" label="地址">
         <el-input
             v-model.trim="props.config.downloadToolHost"
             placeholder="http://192.168.1.x:8080"
@@ -56,6 +57,59 @@
           </template>
         </el-input>
       </SettingsItem>
+      <template v-else-if="props.config.downloadToolType === 'Open115'">
+        <SettingsItem label="番剧根 cid">
+          <el-input v-model.trim="props.config.open115RootCid" placeholder="115 中独立的番剧文件夹 ID"/>
+          <el-text size="small">必须与 NSFW 目录分离；cid 请完整填写，不使用网盘根目录 0。</el-text>
+        </SettingsItem>
+        <SettingsItem label="使用 OpenList 令牌">
+          <el-switch v-model="props.config.open115UseOpenList"/>
+          <el-text size="small">从指定 OpenList 存储读取当前 access_token；刷新仍由 OpenList 负责。挂载路径只用来定位令牌，下载仍写到上面的番剧根 cid。</el-text>
+        </SettingsItem>
+        <template v-if="props.config.open115UseOpenList">
+          <SettingsItem label="OpenList 地址">
+            <el-input v-model.trim="props.config.open115OpenListHost" placeholder="http://127.0.0.1:5244" autocomplete="off"/>
+          </SettingsItem>
+          <SettingsItem label="OpenList Token">
+            <el-input v-model.trim="props.config.open115OpenListToken" type="password" show-password autocomplete="new-password"
+                      :placeholder="props.config.open115OpenListTokenConfigured ? '已配置，留空保持' : 'OpenList 管理 Token'"/>
+          </SettingsItem>
+          <SettingsItem label="存储挂载路径">
+            <el-input v-model.trim="props.config.open115OpenListMountPath" placeholder="/115"/>
+            <el-text size="small">填写那一条通用 115 Open 挂载，例如 /115。不要为番剧再单独挂一条。</el-text>
+          </SettingsItem>
+        </template>
+        <template v-else>
+          <SettingsItem label="Access token">
+              <el-input v-model.trim="props.config.open115AccessToken" type="password" show-password autocomplete="new-password"
+                        :placeholder="props.config.open115AccessTokenConfigured ? '已配置，留空保持' : '独立应用的 access_token'"/>
+          </SettingsItem>
+          <SettingsItem label="Refresh token">
+              <el-input v-model.trim="props.config.open115RefreshToken" type="password" show-password autocomplete="new-password"
+                        :placeholder="props.config.open115RefreshTokenConfigured ? '已配置，留空保持' : '独立应用的 refresh_token'"/>
+              <el-text size="small">请自行申请 115 开放应用并填写授权所得的凭据。过期凭据请先保存再测试。</el-text>
+          </SettingsItem>
+        </template>
+        <SettingsItem label="清除已存凭据">
+          <el-checkbox v-model="props.config.open115ClearCredentials">保存时清除 115 与 OpenList 凭据</el-checkbox>
+        </SettingsItem>
+        <SettingsItem label="离线重试次数">
+          <el-input-number v-model="props.config.openListDownloadRetryNumber" :min="-1"/>
+          <el-text size="small">-1 不限制次数，仍受本次离线超时限制。</el-text>
+        </SettingsItem>
+        <SettingsItem label="离线超时">
+          <el-input-number v-model="props.config.openListDownloadTimeout" :min="1">
+            <template #suffix>分钟</template>
+          </el-input-number>
+        </SettingsItem>
+        <SettingsItem label="云侧重命名">
+          <el-switch v-model="props.config.open115CloudRename"/>
+          <el-text size="small">默认保留种子原名；开启后用 ASS 模板重命名视频及字幕。通用 Webhook 不会将 ASS 命名映射给 strm。</el-text>
+        </SettingsItem>
+        <SettingsItem>
+          <el-alert type="info" :closable="false" show-icon title="115 使用同步离线等待，期间会占用 RSS 下载流程；不提供做种、标签、Trackers、合集或本地完结迁移。完成后可通过下载完成 Webhook 触发 SmartStrm。"/>
+        </SettingsItem>
+      </template>
       <template v-else-if="props.config.downloadToolType === 'OpenList'">
         <SettingsItem label="Token">
           <el-input
@@ -147,6 +201,7 @@
       </div>
       <SettingsItem label="保存位置">
         <el-input v-model.trim="props.config['downloadPathTemplate']"/>
+        <el-text v-if="props.config.downloadToolType === 'Open115'" size="small">相对番剧根 cid，例如 ${title}/Season ${seasonFormat}；请移除本机绝对路径。</el-text>
         <div class="full-width margin-top-4" v-if="!testPathTemplate(props.config['downloadPathTemplate'])">
           <el-alert
               type="warning"
@@ -177,13 +232,17 @@
         <div>
           <el-switch v-model:model-value="props.config.delete"/>
           <br>
-          <el-text class="mx-1" size="small">
+          <el-text v-if="props.config.downloadToolType === 'Open115'" class="mx-1" size="small">
+            仅清理 ASS 已确认归属的离线任务（保留源文件）。启用备用 RSS 且关闭共存时，主 RSS 成功后按文件 ID 清理同集备用版本；无记录的文件不会删除。
+          </el-text>
+          <el-text v-else class="mx-1" size="small">
             自动删除已完成的任务
             <br>
             如果同时开启了 <strong>备用rss功能</strong> 将会自动删除对应洗版视频, 以实现 <strong>主rss</strong> 的替换
           </el-text>
           <br>
           <el-checkbox v-model:model-value="props.config.awaitStalledUP"
+                       v-if="props.config.downloadToolType !== 'Open115'"
                        :disabled="!props.config.delete"
                        label="等待做种完毕"/>
           <br>
@@ -202,10 +261,10 @@
       <div class="settings-section-heading">
         <h3>任务控制</h3>
       </div>
-      <SettingsItem label="失败重试次数">
+      <SettingsItem v-if="props.config.downloadToolType !== 'Open115'" label="失败重试次数">
         <el-input-number v-model:model-value="props.config['downloadRetry']" :max="100" :min="3"/>
       </SettingsItem>
-      <SettingsItem label="同时下载限制">
+      <SettingsItem v-if="props.config.downloadToolType !== 'Open115'" label="同时下载限制">
         <div>
           <el-input-number v-model:model-value="props.config.downloadCount" :min="0"/>
           <br/>
@@ -222,6 +281,7 @@
         </el-input-number>
       </SettingsItem>
       <SettingsItem label="优先保留">
+        <el-text v-if="props.config.downloadToolType === 'Open115'" size="small">按关键词筛选本任务的视频；仍有多个候选时保留云文件并提示人工确认，不自动取合集最大一集。</el-text>
         <div class="full-width">
           <el-switch v-model:model-value="props.config.priorityKeywordsEnable"/>
           <div>
@@ -238,12 +298,12 @@
           </div>
         </div>
       </SettingsItem>
-      <SettingsItem label="自定义标签">
+      <SettingsItem v-if="props.config.downloadToolType !== 'Open115'" label="自定义标签">
         <CustomTagsView :config="props.config"/>
       </SettingsItem>
     </section>
 
-    <section class="settings-section settings-section-advanced">
+    <section v-if="props.config.downloadToolType === 'qBittorrent'" class="settings-section settings-section-advanced">
       <div class="settings-section-heading">
         <h3>高级设置</h3>
       </div>

@@ -5,6 +5,7 @@ import ani.rss.enums.BgmTokenTypeEnum;
 import com.google.gson.annotations.SerializedName;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
+import lombok.ToString;
 import lombok.experimental.Accessors;
 
 import java.io.Serializable;
@@ -49,6 +50,27 @@ public class Config implements Serializable {
      */
     @Schema(description = "下载工具类型")
     private String downloadToolType;
+
+    @Schema(description = "115 番剧根目录 cid")
+    private String open115RootCid;
+    @ToString.Exclude
+    private String open115AccessToken;
+    @ToString.Exclude
+    private String open115RefreshToken;
+    private Boolean open115UseOpenList;
+    private String open115OpenListHost;
+    @ToString.Exclude
+    private String open115OpenListToken;
+    private String open115OpenListMountPath;
+    private Boolean open115CloudRename;
+    @Schema(description = "115 本地刮削目录，对齐 SmartStrm 的 strm 根")
+    private String open115ScrapePath;
+    @Schema(description = "115 刮削等待 strm 秒数")
+    private Integer open115ScrapeDelay;
+    private Boolean open115ClearCredentials;
+    private Boolean open115AccessTokenConfigured;
+    private Boolean open115RefreshTokenConfigured;
+    private Boolean open115OpenListTokenConfigured;
 
     /**
      * 下载重试次数

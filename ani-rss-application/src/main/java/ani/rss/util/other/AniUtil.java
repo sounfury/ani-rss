@@ -334,6 +334,9 @@ public class AniUtil {
      * @param ani 订阅
      */
     public static void completed(Ani ani) {
+        if (Open115Util.isEnabled(CONFIG)) {
+            return;
+        }
         ani = ObjectUtil.clone(ani);
 
         String title = ani.getTitle();

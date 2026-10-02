@@ -12,6 +12,7 @@ import ani.rss.entity.web.ResultCode;
 import ani.rss.start.BaseStart;
 import ani.rss.util.basic.HttpReq;
 import ani.rss.util.other.ConfigUtil;
+import ani.rss.util.other.Open115Util;
 import ani.rss.util.other.TorrentUtil;
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.bean.copier.CopyOptions;
@@ -53,6 +54,7 @@ public class ConfigService {
         String version = MavenUtils.getVersion();
         Config config = ObjectUtil.clone(ConfigUtil.CONFIG);
         config.getLogin().setPassword("");
+        Open115Util.hideCredentials(config);
         config.setVersion(version)
                 .setGitInfo(getGitInfo()).setVerifyExpirationTime(afdianService.verifyExpirationTime()).setJwtKey("");
         return config;
@@ -67,6 +69,11 @@ public class ConfigService {
 
     public void setConfig(Config newConfig) {
         Config config = ConfigUtil.CONFIG;
+        if (Open115Util.isEnabled(newConfig)) {
+            // 在修改全局配置前拒绝本机路径，不能由 sync 的日志吞掉保存错误。
+            Open115Util.relativePath(StrUtil.blankToDefault(newConfig.getDownloadPathTemplate(), config.getDownloadPathTemplate()), true);
+            Open115Util.relativePath(StrUtil.blankToDefault(newConfig.getOvaDownloadPathTemplate(), config.getOvaDownloadPathTemplate()), true);
+        }
         Login login = config.getLogin();
         String username = login.getUsername();
         String password = login.getPassword();
@@ -82,11 +89,10 @@ public class ConfigService {
                 .create()
                 .setIgnoreNullValue(true);
 
-        BeanUtil.copyProperties(
-                newConfig,
-                config,
-                copyOptions
-        );
+        synchronized (Open115Util.CREDENTIAL_LOCK) {
+            Open115Util.mergeCredentials(newConfig, config);
+            BeanUtil.copyProperties(newConfig, config, copyOptions);
+        }
 
         String loginUsername = config.getLogin().getUsername();
         String loginPassword = config.getLogin().getPassword();
@@ -183,6 +189,9 @@ public class ConfigService {
     }
 
     public Boolean downloadLoginTest(Config config) {
+        synchronized (Open115Util.CREDENTIAL_LOCK) {
+            Open115Util.mergeCredentials(config, ConfigUtil.CONFIG);
+        }
         ConfigUtil.format(config);
         String download = config.getDownloadToolType();
         Class<BaseDownload> loadClass = ClassUtil.loadClass("ani.rss.download." + download);

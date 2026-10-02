@@ -7,6 +7,7 @@ import ani.rss.enums.StringEnum;
 import ani.rss.util.basic.HttpReq;
 import ani.rss.util.other.BgmUtil;
 import ani.rss.util.other.ConfigUtil;
+import ani.rss.util.other.Open115Util;
 import ani.rss.util.other.TmdbUtils;
 import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.date.DateUtil;
@@ -61,7 +62,10 @@ public class ScrapeService {
         try {
             log.info("正在刮削 ... {}", title);
             // 下载位置
-            String downloadPath = downloadService.getDownloadPath(ani);
+            String downloadPath = resolveScrapePath(ani);
+            if (StrUtil.isBlank(downloadPath)) {
+                return;
+            }
             // 更新tmdb信息
             Optional<Tmdb> tmdbOptional = TmdbUtils.getTmdb(tmdb, tmdbTypeEnum);
             if (tmdbOptional.isEmpty()) {
@@ -91,25 +95,16 @@ public class ScrapeService {
      * @throws Exception 异常
      */
     public void scrapeMovie(Tmdb tmdb, String downloadPath, Boolean force) throws Exception {
+        FileUtil.mkdir(downloadPath);
+        saveTmdbImages(tmdb, downloadPath, force);
+
         List<File> files = FileUtils.listFileList(downloadPath);
-
-        if (files.isEmpty()) {
-            return;
-        }
-
         Optional<File> first = files
                 .stream()
-                .filter(file -> {
-                    String extName = FileUtil.extName(file);
-                    if (StrUtil.isBlank(extName)) {
-                        return false;
-                    }
-                    return FileUtils.isVideoFormat(extName);
-                })
+                .filter(file -> isScrapeMedia(FileUtil.extName(file)))
                 .max(Comparator.comparingLong(File::length));
 
         if (first.isEmpty()) {
-            // 找不到视频文件
             return;
         }
 
@@ -121,8 +116,6 @@ public class ScrapeService {
         if (force || !FileUtil.exist(nfoFile)) {
             nfoGenerator.generateMovieNfo(tmdb, nfoFile.toString());
         }
-
-        saveTmdbImages(tmdb, downloadPath, force);
     }
 
     /**
@@ -136,10 +129,7 @@ public class ScrapeService {
      */
     public void scrapeTv(Tmdb tmdb, Integer season, String downloadPath, Boolean force) throws Exception {
         // 下载位置
-        File downloadPathFile = new File(downloadPath);
-        if (!FileUtil.exist(downloadPathFile)) {
-            return;
-        }
+        File downloadPathFile = FileUtil.mkdir(downloadPath);
 
         // tvshow.nfo
         File tvShowNfoFile = new File(downloadPathFile.getParent(), "tvshow.nfo");
@@ -189,8 +179,7 @@ public class ScrapeService {
                 continue;
             }
 
-            if (!FileUtils.isVideoFormat(extName)) {
-                // 非视频文件
+            if (!isScrapeMedia(extName)) {
                 continue;
             }
 
@@ -340,8 +329,12 @@ public class ScrapeService {
             return;
         }
 
-        String downloadPath = downloadService.getDownloadPath(ani);
+        String downloadPath = resolveScrapePath(ani);
+        if (StrUtil.isBlank(downloadPath)) {
+            return;
+        }
 
+        FileUtil.mkdir(downloadPath);
         File file = new File(downloadPath, "bangumi.ini");
         if (!force) {
             if (file.exists()) {
@@ -364,6 +357,30 @@ public class ScrapeService {
         FileUtil.writeUtf8String(s, file);
 
         log.info("已保存 {}", file);
+    }
+
+    private String resolveScrapePath(Ani ani) {
+        String downloadPath = downloadService.getDownloadPath(ani);
+        if (!Open115Util.isEnabled(CONFIG)) {
+            return downloadPath;
+        }
+        try {
+            String local = Open115Util.localScrapeDir(CONFIG, downloadPath);
+            if (StrUtil.isBlank(local)) {
+                log.warn("115 刮削未配置本地目录，已跳过 {}", ani.getTitle());
+            }
+            return local;
+        } catch (IllegalArgumentException e) {
+            log.warn("115 刮削目录无效 {}: {}", ani.getTitle(), e.getMessage());
+            return "";
+        }
+    }
+
+    private static boolean isScrapeMedia(String extName) {
+        if (StrUtil.isBlank(extName)) {
+            return false;
+        }
+        return FileUtils.isVideoFormat(extName) || "strm".equalsIgnoreCase(extName);
     }
 
 }

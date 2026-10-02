@@ -126,6 +126,20 @@ public class ConfigUtil {
                 .setOvaDownloadPathTemplate(ovaDownloadPathTemplate)
                 .setDownloadToolHost(downloadToolHost)
                 .setDownloadToolType(downloadToolType)
+                .setOpen115RootCid("")
+                .setOpen115AccessToken("")
+                .setOpen115RefreshToken("")
+                .setOpen115UseOpenList(false)
+                .setOpen115OpenListHost("")
+                .setOpen115OpenListToken("")
+                .setOpen115OpenListMountPath("")
+                .setOpen115CloudRename(false)
+                .setOpen115ScrapePath("")
+                .setOpen115ScrapeDelay(20)
+                .setOpen115ClearCredentials(false)
+                .setOpen115AccessTokenConfigured(false)
+                .setOpen115RefreshTokenConfigured(false)
+                .setOpen115OpenListTokenConfigured(false)
                 .setDownloadRetry(3)
                 .setDownloadToolUsername(downloadToolUsername)
                 .setDownloadToolPassword(downloadToolPassword)
@@ -382,7 +396,11 @@ public class ConfigUtil {
         for (Func1<Config, String> func1 : func1List) {
             String fieldName = LambdaUtil.getFieldName(func1);
             String v = func1.callWithRuntimeException(config);
-            v = FileUtils.getAbsolutePath(v);
+            if (Open115Util.isEnabled(config) && !fieldName.equals("completedPathTemplate")) {
+                v = Open115Util.relativePath(v, true);
+            } else {
+                v = FileUtils.getAbsolutePath(v);
+            }
             dynaBean.set(fieldName, v);
         }
     }
